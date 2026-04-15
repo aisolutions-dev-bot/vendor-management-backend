@@ -34,65 +34,51 @@ public class VendorInvSubmissionService {
   @Inject
   CurrentUserService currentUserService;
 
-  // TODO: Remove hardcode after vendor auth is implemented
-  private static final String HARDCODED_VENDOR_ID = "EVECONPL01";
-
   // #region Get Invoices
 
   /**
    * Get all invoices for the logged-in vendor
    */
   public Uni<List<VendorInvSubmissionDTO>> getInvoices() {
-    // TODO: Remove hardcode after vendor auth is implemented
-    String vendorId = HARDCODED_VENDOR_ID;
-    log.info("Fetching invoices for vendor: {}", vendorId);
-    return invoiceRepository.fetchInvoicesByVendorId(vendorId);
-    // return currentUserService.getCurrentUserLoginId()
-    // .onItem().transformToUni(vendorId -> {
-    // if (vendorId == null || vendorId.isBlank()) {
-    // return Uni.createFrom().failure(
-    // new IllegalStateException("Unable to determine logged-in vendor"));
-    // }
-    // return invoiceRepository.fetchInvoicesByVendorId(vendorId);
-    // });
+    return currentUserService.getCurrentUser()
+        .onItem().transformToUni(user -> {
+          if (user == null || user.getStaffId() == null || user.getStaffId().isBlank()) {
+            return Uni.createFrom().failure(
+                new IllegalStateException("Unable to determine logged-in vendor"));
+          }
+          log.info("Fetching invoices for vendor: {}", user.getStaffId());
+          return invoiceRepository.fetchInvoicesByVendorId(user.getStaffId());
+        });
   }
 
   /**
    * Get invoices filtered by status
    */
   public Uni<List<VendorInvSubmissionDTO>> getInvoicesByStatus(String status) {
-    // TODO: Remove hardcode after vendor auth is implemented
-    String vendorId = HARDCODED_VENDOR_ID;
-    log.info("Fetching invoices for vendor: {} with status: {}", vendorId, status);
-    return invoiceRepository.fetchInvoicesByStatus(vendorId, status);
-    // return currentUserService.getCurrentUserLoginId()
-    // .onItem().transformToUni(vendorId -> {
-    // if (vendorId == null || vendorId.isBlank()) {
-    // return Uni.createFrom().failure(
-    // new IllegalStateException("Unable to determine logged-in vendor"));
-    // }
-    // return invoiceRepository.fetchInvoicesByStatus(vendorId, status);
-    // });
+    return currentUserService.getCurrentUser()
+        .onItem().transformToUni(user -> {
+          if (user == null || user.getStaffId() == null || user.getStaffId().isBlank()) {
+            return Uni.createFrom().failure(
+                new IllegalStateException("Unable to determine logged-in vendor"));
+          }
+          log.info("Fetching invoices for vendor: {} with status: {}", user.getStaffId(), status);
+          return invoiceRepository.fetchInvoicesByStatus(user.getStaffId(), status);
+        });
   }
 
   /**
    * Get a single invoice by ID with ownership validation
    */
   public Uni<VendorInvSubmissionDTO> getInvoiceById(Long id) {
-    // TODO: Remove hardcode after vendor auth is implemented
-    String vendorId = HARDCODED_VENDOR_ID;
-    return invoiceRepository.fetchInvoiceById(id, vendorId)
-        .onItem().ifNull().failWith(() -> new IllegalArgumentException("Invoice not found"));
-    // return currentUserService.getCurrentUserLoginId()
-    // .onItem().transformToUni(vendorId -> {
-    // if (vendorId == null || vendorId.isBlank()) {
-    // return Uni.createFrom().failure(
-    // new IllegalStateException("Unable to determine logged-in vendor"));
-    // }
-    // return invoiceRepository.fetchInvoiceById(id, vendorId)
-    // .onItem().ifNull().failWith(() -> new IllegalArgumentException("Invoice not
-    // found"));
-    // });
+    return currentUserService.getCurrentUser()
+        .onItem().transformToUni(user -> {
+          if (user == null || user.getStaffId() == null || user.getStaffId().isBlank()) {
+            return Uni.createFrom().failure(
+                new IllegalStateException("Unable to determine logged-in vendor"));
+          }
+          return invoiceRepository.fetchInvoiceById(id, user.getStaffId())
+              .onItem().ifNull().failWith(() -> new IllegalArgumentException("Invoice not found"));
+        });
   }
 
   /**
@@ -113,105 +99,110 @@ public class VendorInvSubmissionService {
    * Fetches PO data and creates invoice with line items from PO details.
    */
   public Uni<VendorInvSubmissionDTO> createInvoiceFromPO(CreateInvoiceRequestDTO request) {
-    // TODO: Remove hardcode after vendor auth is implemented
-    String vendorId = HARDCODED_VENDOR_ID;
-
     // Validate request
     if (request == null || request.getPoUniqId() == null) {
       return Uni.createFrom().failure(
           new IllegalArgumentException("PO ID is required"));
     }
 
-    log.info("Creating invoice from PO {} for vendor {}", request.getPoUniqId(), vendorId);
+    return currentUserService.getCurrentUser()
+        .onItem().transformToUni(user -> {
+          if (user == null || user.getStaffId() == null || user.getStaffId().isBlank()) {
+            return Uni.createFrom().failure(
+                new IllegalStateException("Unable to determine logged-in vendor"));
+          }
+          String vendorId = user.getStaffId();
+          log.info("Creating invoice from PO {} for vendor {}", request.getPoUniqId(), vendorId);
 
-    return Panache.withTransaction(() -> {
-      // First verify PO exists and belongs to vendor, then fetch details
-      return purchaseOrderRepository.fetchPurchaseOrderById(request.getPoUniqId(), vendorId)
-          .onItem().ifNull().failWith(() -> new IllegalArgumentException("Purchase Order not found or access denied"))
-          .onItem().transformToUni(po -> purchaseOrderRepository.fetchPurchaseOrderDetails(po.getPoNumber())
-              .onItem().transformToUni(poDetails ->
-              // Generate invoice number and create invoice
-              invoiceRepository.generateInvoiceNumber(vendorId)
-                  .onItem().transformToUni(invoiceNumber -> {
-                    log.info("Generated invoice number: {}", invoiceNumber);
+          return Panache.withTransaction(() -> {
+            // First verify PO exists and belongs to vendor, then fetch details
+            return purchaseOrderRepository.fetchPurchaseOrderById(request.getPoUniqId(), vendorId)
+                .onItem().ifNull().failWith(() -> new IllegalArgumentException("Purchase Order not found or access denied"))
+                .onItem().transformToUni(po -> purchaseOrderRepository.fetchPurchaseOrderDetails(po.getPoNumber())
+                    .onItem().transformToUni(poDetails ->
+                    // Generate invoice number and create invoice
+                    invoiceRepository.generateInvoiceNumber(vendorId)
+                        .onItem().transformToUni(invoiceNumber -> {
+                          log.info("Generated invoice number: {}", invoiceNumber);
 
-                    // Create header entity from PO data
-                    VendorInvSubmission invoice = new VendorInvSubmission();
-                    invoice.setInvoiceNumber(invoiceNumber);
-                    invoice.setInvoiceStatus("OPEN");
-                    invoice.setInvoiceDate(LocalDateTime.now());
-                    invoice.setVendorId(vendorId);
-                    invoice.setVendorName(po.getSupplierName());
-                    invoice.setCurrency(request.getCurrency() != null ? request.getCurrency() : po.getCurrency());
-                    invoice.setExchangeRate(
-                        request.getExchangeRate() != null ? request.getExchangeRate() : po.getExchangeRate());
-                    invoice.setReferenceOur(po.getPoNumber());
-                    invoice.setProjectCode(po.getReferenceOur()); // Project reference from PO
-                    invoice.setTerms(po.getTerms());
-                    invoice.setTermsDay(po.getTermsDay() != null ? po.getTermsDay().intValue() : null);
-                    invoice.setRemarks("Created from PO: " + po.getPoNumber());
+                          // Create header entity from PO data
+                          VendorInvSubmission invoice = new VendorInvSubmission();
+                          invoice.setInvoiceNumber(invoiceNumber);
+                          invoice.setInvoiceStatus("OPEN");
+                          invoice.setInvoiceDate(LocalDateTime.now());
+                          invoice.setVendorId(vendorId);
+                          invoice.setVendorName(po.getSupplierName());
+                          invoice.setCurrency(request.getCurrency() != null ? request.getCurrency() : po.getCurrency());
+                          invoice.setExchangeRate(
+                              request.getExchangeRate() != null ? request.getExchangeRate() : po.getExchangeRate());
+                          invoice.setReferenceOur(po.getPoNumber());
+                          invoice.setProjectCode(po.getReferenceOur()); // Project reference from PO
+                          invoice.setTerms(po.getTerms());
+                          invoice.setTermsDay(po.getTermsDay() != null ? po.getTermsDay().intValue() : null);
+                          invoice.setRemarks("Created from PO: " + po.getPoNumber());
 
-                    // Calculate totals from PO details
-                    BigDecimal subTotal = request.getTotalForeign() != null
-                        ? request.getTotalForeign()
-                        : po.getTotalForeign();
-                    invoice.setSubTotalForeign(subTotal);
-                    invoice.setTaxForeign(BigDecimal.ZERO);
-                    invoice.setTotalForeign(subTotal);
-                    invoice.setBalanceAmt(subTotal);
+                          // Calculate totals from PO details
+                          BigDecimal subTotal = request.getTotalForeign() != null
+                              ? request.getTotalForeign()
+                              : po.getTotalForeign();
+                          invoice.setSubTotalForeign(subTotal);
+                          invoice.setTaxForeign(BigDecimal.ZERO);
+                          invoice.setTotalForeign(subTotal);
+                          invoice.setBalanceAmt(subTotal);
 
-                    // Calculate base amounts
-                    BigDecimal rate = invoice.getExchangeRate() != null ? invoice.getExchangeRate() : BigDecimal.ONE;
-                    invoice.setSubTotalBase(subTotal.multiply(rate));
-                    invoice.setTaxBase(BigDecimal.ZERO);
-                    invoice.setTotalBase(subTotal.multiply(rate));
+                          // Calculate base amounts
+                          BigDecimal rate = invoice.getExchangeRate() != null ? invoice.getExchangeRate() : BigDecimal.ONE;
+                          invoice.setSubTotalBase(subTotal.multiply(rate));
+                          invoice.setTaxBase(BigDecimal.ZERO);
+                          invoice.setTotalBase(subTotal.multiply(rate));
 
-                    // Calculate due date
-                    if (po.getTermsDay() != null && po.getTermsDay().compareTo(BigDecimal.ZERO) > 0) {
-                      invoice.setInvoiceDueDate(LocalDateTime.now().plusDays(po.getTermsDay().longValue()));
-                    }
-
-                    // Audit fields
-                    invoice.setEntryStaff(vendorId);
-                    invoice.setEntryDate(LocalDateTime.now());
-
-                    return invoiceRepository.insertInvoice(invoice)
-                        .onItem().transformToUni(savedInvoice -> {
-                          // Create detail entities from PO details
-                          if (poDetails == null || poDetails.isEmpty()) {
-                            log.info("No PO details found, returning invoice without line items");
-                            return Uni.createFrom().item(mapEntityToDto(savedInvoice));
+                          // Calculate due date
+                          if (po.getTermsDay() != null && po.getTermsDay().compareTo(BigDecimal.ZERO) > 0) {
+                            invoice.setInvoiceDueDate(LocalDateTime.now().plusDays(po.getTermsDay().longValue()));
                           }
 
-                          log.info("Creating {} invoice detail lines from PO", poDetails.size());
+                          // Audit fields
+                          invoice.setEntryStaff(vendorId);
+                          invoice.setEntryDate(LocalDateTime.now());
 
-                          // Insert all details sequentially
-                          Uni<Void> insertChain = Uni.createFrom().voidItem();
-                          int seq = 1;
-                          for (PurchaseOrderDetailDTO poDetail : poDetails) {
-                            VendorInvSubmissionDetail det = new VendorInvSubmissionDetail();
-                            det.setInvoiceNumber(invoiceNumber);
-                            det.setDetailCode(String.format("%04d", seq++));
-                            det.setReferenceId(po.getPoNumber());
-                            det.setDescription(poDetail.getDescription());
-                            det.setCurrency(invoice.getCurrency());
-                            det.setExchangeRate(invoice.getExchangeRate());
-                            det.setQuantity(poDetail.getQuantityOrder());
-                            det.setSubTotalForeign(poDetail.getSubTotalForeign());
-                            det.setTaxForeign(BigDecimal.ZERO);
-                            det.setTotalForeign(poDetail.getSubTotalForeign());
-                            det.setEntryStaff(vendorId);
-                            det.setEntryDate(LocalDateTime.now());
+                          return invoiceRepository.insertInvoice(invoice)
+                              .onItem().transformToUni(savedInvoice -> {
+                                // Create detail entities from PO details
+                                if (poDetails == null || poDetails.isEmpty()) {
+                                  log.info("No PO details found, returning invoice without line items");
+                                  return Uni.createFrom().item(mapEntityToDto(savedInvoice));
+                                }
 
-                            final VendorInvSubmissionDetail finalDet = det;
-                            insertChain = insertChain.chain(() -> invoiceRepository.insertInvoiceDetail(finalDet)
-                                .replaceWithVoid());
-                          }
+                                log.info("Creating {} invoice detail lines from PO", poDetails.size());
 
-                          return insertChain.replaceWith(mapEntityToDto(savedInvoice));
-                        });
-                  })));
-    });
+                                // Insert all details sequentially
+                                Uni<Void> insertChain = Uni.createFrom().voidItem();
+                                int seq = 1;
+                                for (PurchaseOrderDetailDTO poDetail : poDetails) {
+                                  VendorInvSubmissionDetail det = new VendorInvSubmissionDetail();
+                                  det.setInvoiceNumber(invoiceNumber);
+                                  det.setDetailCode(String.format("%04d", seq++));
+                                  det.setReferenceId(po.getPoNumber());
+                                  det.setDescription(poDetail.getDescription());
+                                  det.setCurrency(invoice.getCurrency());
+                                  det.setExchangeRate(invoice.getExchangeRate());
+                                  det.setQuantity(poDetail.getQuantityOrder());
+                                  det.setSubTotalForeign(poDetail.getSubTotalForeign());
+                                  det.setTaxForeign(BigDecimal.ZERO);
+                                  det.setTotalForeign(poDetail.getSubTotalForeign());
+                                  det.setEntryStaff(vendorId);
+                                  det.setEntryDate(LocalDateTime.now());
+
+                                  final VendorInvSubmissionDetail finalDet = det;
+                                  insertChain = insertChain.chain(() -> invoiceRepository.insertInvoiceDetail(finalDet)
+                                      .replaceWithVoid());
+                                }
+
+                                return insertChain.replaceWith(mapEntityToDto(savedInvoice));
+                              });
+                        })));
+          });
+        });
   }
 
   /**
@@ -227,47 +218,53 @@ public class VendorInvSubmissionService {
           new IllegalArgumentException("Invoice header is required"));
     }
 
-    // TODO: Remove hardcode after vendor auth is implemented
-    String vendorId = HARDCODED_VENDOR_ID;
-    return Panache.withTransaction(() -> {
-      return invoiceRepository.generateInvoiceNumber(vendorId)
-          .onItem().transformToUni(invoiceNumber -> {
-            // Create header entity
-            VendorInvSubmission invoice = new VendorInvSubmission();
-            mapDtoToEntity(headerDto, invoice);
-            invoice.setInvoiceNumber(invoiceNumber);
-            invoice.setVendorId(vendorId);
-            invoice.setInvoiceStatus("OPEN");
-            invoice.setEntryStaff(vendorId);
-            invoice.setEntryDate(LocalDateTime.now());
+    return currentUserService.getCurrentUser()
+        .onItem().transformToUni(user -> {
+          if (user == null || user.getStaffId() == null || user.getStaffId().isBlank()) {
+            return Uni.createFrom().failure(
+                new IllegalStateException("Unable to determine logged-in vendor"));
+          }
+          String vendorId = user.getStaffId();
+          return Panache.withTransaction(() -> {
+            return invoiceRepository.generateInvoiceNumber(vendorId)
+                .onItem().transformToUni(invoiceNumber -> {
+                  // Create header entity
+                  VendorInvSubmission invoice = new VendorInvSubmission();
+                  mapDtoToEntity(headerDto, invoice);
+                  invoice.setInvoiceNumber(invoiceNumber);
+                  invoice.setVendorId(vendorId);
+                  invoice.setInvoiceStatus("OPEN");
+                  invoice.setEntryStaff(vendorId);
+                  invoice.setEntryDate(LocalDateTime.now());
 
-            return invoiceRepository.insertInvoice(invoice)
-                .onItem().transformToUni(savedInvoice -> {
-                  // Create detail entities
-                  if (details == null || details.isEmpty()) {
-                    return Uni.createFrom().item(mapEntityToDto(savedInvoice));
-                  }
+                  return invoiceRepository.insertInvoice(invoice)
+                      .onItem().transformToUni(savedInvoice -> {
+                        // Create detail entities
+                        if (details == null || details.isEmpty()) {
+                          return Uni.createFrom().item(mapEntityToDto(savedInvoice));
+                        }
 
-                  // Insert all details sequentially
-                  Uni<Void> insertChain = Uni.createFrom().voidItem();
-                  int seq = 1;
-                  for (VendorInvSubmissionDetailDTO detDto : details) {
-                    VendorInvSubmissionDetail det = new VendorInvSubmissionDetail();
-                    mapDetailDtoToEntity(detDto, det);
-                    det.setInvoiceNumber(invoiceNumber);
-                    det.setDetailCode(String.format("%04d", seq++));
-                    det.setEntryStaff(vendorId);
-                    det.setEntryDate(LocalDateTime.now());
+                        // Insert all details sequentially
+                        Uni<Void> insertChain = Uni.createFrom().voidItem();
+                        int seq = 1;
+                        for (VendorInvSubmissionDetailDTO detDto : details) {
+                          VendorInvSubmissionDetail det = new VendorInvSubmissionDetail();
+                          mapDetailDtoToEntity(detDto, det);
+                          det.setInvoiceNumber(invoiceNumber);
+                          det.setDetailCode(String.format("%04d", seq++));
+                          det.setEntryStaff(vendorId);
+                          det.setEntryDate(LocalDateTime.now());
 
-                    final VendorInvSubmissionDetail finalDet = det;
-                    insertChain = insertChain.chain(() -> invoiceRepository.insertInvoiceDetail(finalDet)
-                        .replaceWithVoid());
-                  }
+                          final VendorInvSubmissionDetail finalDet = det;
+                          insertChain = insertChain.chain(() -> invoiceRepository.insertInvoiceDetail(finalDet)
+                              .replaceWithVoid());
+                        }
 
-                  return insertChain.replaceWith(mapEntityToDto(savedInvoice));
+                        return insertChain.replaceWith(mapEntityToDto(savedInvoice));
+                      });
                 });
           });
-    });
+        });
   }
 
   // #endregion
@@ -278,42 +275,26 @@ public class VendorInvSubmissionService {
    * Get dashboard statistics for the logged-in vendor
    */
   public Uni<Map<String, Object>> getDashboardStats() {
-    // TODO: Remove hardcode after vendor auth is implemented
-    String vendorId = HARDCODED_VENDOR_ID;
-    Uni<Long> openCount = invoiceRepository.countByStatus(vendorId, "OPEN");
-    Uni<Long> pendingCount = invoiceRepository.countByStatus(vendorId, "PENDING");
-    Uni<Long> approvedCount = invoiceRepository.countByStatus(vendorId, "APPROVED");
-    Uni<BigDecimal> totalPending = invoiceRepository.getTotalPendingAmount(vendorId);
+    return currentUserService.getCurrentUser()
+        .onItem().transformToUni(user -> {
+          if (user == null || user.getStaffId() == null || user.getStaffId().isBlank()) {
+            return Uni.createFrom().failure(
+                new IllegalStateException("Unable to determine logged-in vendor"));
+          }
+          String vendorId = user.getStaffId();
+          Uni<Long> openCount = invoiceRepository.countByStatus(vendorId, "OPEN");
+          Uni<Long> pendingCount = invoiceRepository.countByStatus(vendorId, "PENDING");
+          Uni<Long> approvedCount = invoiceRepository.countByStatus(vendorId, "APPROVED");
+          Uni<BigDecimal> totalPending = invoiceRepository.getTotalPendingAmount(vendorId);
 
-    return Uni.combine().all().unis(openCount, pendingCount, approvedCount, totalPending)
-        .asTuple()
-        .map(tuple -> Map.of(
-            "openInvoices", tuple.getItem1(),
-            "pendingInvoices", tuple.getItem2(),
-            "approvedInvoices", tuple.getItem3(),
-            "totalPendingAmount", tuple.getItem4()));
-    // return currentUserService.getCurrentUserLoginId()
-    // .onItem().transformToUni(vendorId -> {
-    // if (vendorId == null || vendorId.isBlank()) {
-    // return Uni.createFrom().failure(
-    // new IllegalStateException("Unable to determine logged-in vendor"));
-    // }
-    // Uni<Long> openCount = invoiceRepository.countByStatus(vendorId, "OPEN");
-    // Uni<Long> pendingCount = invoiceRepository.countByStatus(vendorId,
-    // "PENDING");
-    // Uni<Long> approvedCount = invoiceRepository.countByStatus(vendorId,
-    // "APPROVED");
-    // Uni<BigDecimal> totalPending =
-    // invoiceRepository.getTotalPendingAmount(vendorId);
-    // return Uni.combine().all().unis(openCount, pendingCount, approvedCount,
-    // totalPending)
-    // .asTuple()
-    // .map(tuple -> Map.of(
-    // "openInvoices", tuple.getItem1(),
-    // "pendingInvoices", tuple.getItem2(),
-    // "approvedInvoices", tuple.getItem3(),
-    // "totalPendingAmount", tuple.getItem4()));
-    // });
+          return Uni.combine().all().unis(openCount, pendingCount, approvedCount, totalPending)
+              .asTuple()
+              .map(tuple -> Map.of(
+                  "openInvoices", tuple.getItem1(),
+                  "pendingInvoices", tuple.getItem2(),
+                  "approvedInvoices", tuple.getItem3(),
+                  "totalPendingAmount", tuple.getItem4()));
+        });
   }
 
   // #endregion
