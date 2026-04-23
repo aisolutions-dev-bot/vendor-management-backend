@@ -1,5 +1,7 @@
 package com.aisolutions.vendormanagement.service.invoices;
 
+import com.aisolutions.vendormanagement.client.StaffInternalClient;
+import com.aisolutions.vendormanagement.client.SystemParameterInternalClient;
 import com.aisolutions.vendormanagement.dto.CreateInvoiceRequestDTO;
 import com.aisolutions.vendormanagement.dto.PurchaseOrderDetailDTO;
 import com.aisolutions.vendormanagement.dto.VendorInvSubmissionDTO;
@@ -9,12 +11,17 @@ import com.aisolutions.vendormanagement.entity.VendorInvSubmissionDetail;
 import com.aisolutions.vendormanagement.repository.PurchaseOrderRepository;
 import com.aisolutions.vendormanagement.repository.VendorInvSubmissionRepository;
 import com.aisolutions.vendormanagement.service.CurrentUserService;
+import com.aisolutions.vendormanagement.service.email.EmailNotificationService;
+import com.aisolutions.vendormanagement.service.email.InvoiceEmailTemplate;
+import com.aisolutions.vendormanagement.service.token.InvoiceActionTokenService;
 
 import io.quarkus.hibernate.reactive.panache.Panache;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -33,6 +40,21 @@ public class VendorInvSubmissionService {
 
   @Inject
   CurrentUserService currentUserService;
+
+  @Inject
+  InvoiceActionTokenService tokenService;
+
+  @Inject
+  EmailNotificationService emailService;
+
+  @RestClient
+  StaffInternalClient staffClient;
+
+  @RestClient
+  SystemParameterInternalClient systemParameterClient;
+
+  @ConfigProperty(name = "app.invoice.action-base-url")
+  String actionBaseUrl;
 
   // #region Get Invoices
 
@@ -200,10 +222,70 @@ public class VendorInvSubmissionService {
 
                                 return insertChain.replaceWith(mapEntityToDto(savedInvoice));
                               });
-                        })));
+                        })))
+                    .onItem().call(dto -> sendInvoiceNotification(dto))
+                    ;
           });
         });
   }
+
+  /**
+   * Send email notification to inCharge staff after invoice creation.
+   * Generates approve + reject tokens and sends email. Failures are logged but don't fail the invoice creation.
+   */
+  private static final String PARAM_VENDOR_INV_APPROVAL_IN_CHARGE = "VENDOR-INV-APPROVAL-IN-CHARGE";
+
+  private Uni<Void> sendInvoiceNotification(VendorInvSubmissionDTO invoice) {
+    return systemParameterClient.getVendorInvoiceApprovalConfig()
+        .onItem().transformToUni(config -> {
+          if (config == null || config.getStaffId() == null || config.getStaffId().isBlank()) {
+            log.warn("System parameter {} not configured, skipping email notification for invoice {}",
+                PARAM_VENDOR_INV_APPROVAL_IN_CHARGE, invoice.getInvoiceNumber());
+            return Uni.createFrom().voidItem();
+          }
+          return sendToStaff(invoice, config.getStaffId());
+        })
+        .onFailure().invoke(e -> log.error("Failed to fetch approval config for invoice {}: {}",
+            invoice.getInvoiceNumber(), e.getMessage()))
+        .onFailure().recoverWithNull()
+        .replaceWithVoid();
+  }
+
+  private Uni<Void> sendToStaff(VendorInvSubmissionDTO invoice, String staffId) {
+    return staffClient.getStaff(staffId)
+        .onItem().transformToUni(staff -> {
+          String email = staff != null ? staff.getEffectiveEmail() : null;
+          if (email == null || email.isBlank()) {
+            log.warn("No email found for staff {}, skipping notification", staffId);
+            return Uni.createFrom().voidItem();
+          }
+
+          return tokenService.generateToken(invoice.getUniqId(), invoice.getInvoiceNumber(), "APPROVE", staffId)
+              .onItem().transformToUni(approveToken ->
+                  tokenService.generateToken(invoice.getUniqId(), invoice.getInvoiceNumber(), "REJECT", staffId)
+                      .onItem().transformToUni(rejectToken -> {
+                        String approveUrl = actionBaseUrl + "/api/v1/invoices/action?token=" + approveToken;
+                        String rejectUrl  = actionBaseUrl + "/api/v1/invoices/action?token=" + rejectToken;
+                        String subject = "Invoice Approval Request — " + invoice.getInvoiceNumber();
+                        String body = InvoiceEmailTemplate.build(invoice, staff.getName(), approveUrl, rejectUrl);
+
+                        return emailService.sendReactive(email, subject, body)
+                            .onItem().invoke(sent -> {
+                              if (Boolean.TRUE.equals(sent)) {
+                                log.info("Invoice notification sent to {} for invoice {}", email, invoice.getInvoiceNumber());
+                              } else {
+                                log.warn("Invoice notification failed to send for invoice {}", invoice.getInvoiceNumber());
+                              }
+                            })
+                            .replaceWithVoid();
+                      })
+              );
+        })
+        .onFailure().invoke(e -> log.error("Error sending invoice notification for {}: {}", invoice.getInvoiceNumber(), e.getMessage()))
+        .onFailure().recoverWithNull()
+        .replaceWithVoid();
+  }
+
 
   /**
    * Create a new invoice submission with line items (legacy method for full DTO)

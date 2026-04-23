@@ -24,6 +24,7 @@ dependencies {
     )
 
     implementation("io.quarkus:quarkus-arc")
+    implementation("io.quarkus:quarkus-hibernate-validator")
     implementation("io.quarkus:quarkus-rest")
     implementation("io.quarkus:quarkus-rest-jackson")
     implementation("io.quarkus:quarkus-rest-client-jackson")
@@ -46,7 +47,7 @@ dependencies {
     testImplementation("io.rest-assured:rest-assured")
 
     // MavenLocal
-    implementation("com.aisolutions:ai-solutions-java-shared:0.0.1")
+    implementation("com.aisolutions:ai-solutions-java-shared:0.0.3")
 
     // Google API Client Libraries
     implementation("com.google.api-client:google-api-client:2.8.0")
