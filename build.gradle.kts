@@ -8,7 +8,7 @@ repositories {
     mavenCentral() // Public artifacts
     maven {
         name = "GitHubPackages"
-        url = uri("https://maven.pkg.github.com/AI-Solutions-App/ai-solutions-java-shared")
+        url = uri("https://maven.pkg.github.com/aisolutions-dev-bot/ai-solutions-java-shared")
         credentials {
             username = System.getenv("GITHUB_ACTOR")
             password = System.getenv("GITHUB_TOKEN")
@@ -46,7 +46,7 @@ dependencies {
     testImplementation("io.rest-assured:rest-assured")
 
     // MavenLocal
-    implementation("com.aisolutions:ai-solutions-java-shared:0.0.1")
+    implementation("com.aisolutions:ai-solutions-java-shared:0.0.3")
 
     // Google API Client Libraries
     implementation("com.google.api-client:google-api-client:2.8.0")
