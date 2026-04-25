@@ -8,7 +8,7 @@ repositories {
     mavenCentral() // Public artifacts
     maven {
         name = "GitHubPackages"
-        url = uri("https://maven.pkg.github.com/AI-Solutions-App/ai-solutions-java-shared")
+        url = uri("https://maven.pkg.github.com/aisolutions-dev-bot/ai-solutions-java-shared")
         credentials {
             username = System.getenv("GITHUB_ACTOR")
             password = System.getenv("GITHUB_TOKEN")
