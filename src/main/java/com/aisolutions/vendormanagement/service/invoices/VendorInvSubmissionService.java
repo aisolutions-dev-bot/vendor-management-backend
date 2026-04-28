@@ -179,7 +179,7 @@ public class VendorInvSubmissionService {
                           invoice.setTotalBase(subTotal.multiply(rate));
 
                           // Calculate due date
-                          if (po.getTermsDay() != null && po.getTermsDay().compareTo(BigDecimal.ZERO) > 0) {
+                          if (po.getTermsDay() != null && po.getTermsDay() > 0) {
                             invoice.setInvoiceDueDate(LocalDateTime.now().plusDays(po.getTermsDay().longValue()));
                           }
 
