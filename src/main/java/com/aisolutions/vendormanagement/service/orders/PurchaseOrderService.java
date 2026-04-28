@@ -29,36 +29,27 @@ public class PurchaseOrderService {
   // #region GET METHODS
 
   public Uni<List<PurchaseOrderDTO>> getPurchaseOrders() {
-    // TODO: Remove hardcode after vendor auth is implemented
-    String loginId = "EVECONPL01";
-    log.info("Fetching POs for supplier: {}", loginId);
-    return poRepository.fetchPurchaseOrdersBySupplierId(loginId);
-    // return currentUserService.getCurrentUserLoginId()
-    // .onItem().transformToUni(loginId -> {
-    // if (loginId == null || loginId.isBlank()) {
-    // return Uni.createFrom().failure(
-    // new IllegalStateException("Unable to determine logged-in vendor"));
-    // }
-    // log.info("Fetching POs for supplier: {}", loginId);
-    // return poRepository.fetchPurchaseOrdersBySupplierId(loginId);
-    // });
+    return currentUserService.getCurrentUser()
+        .onItem().transformToUni(user -> {
+          if (user == null || user.getStaffId() == null || user.getStaffId().isBlank()) {
+            return Uni.createFrom().failure(
+                new IllegalStateException("Unable to determine logged-in vendor"));
+          }
+          log.info("Fetching POs for supplier: {}", user.getStaffId());
+          return poRepository.fetchPurchaseOrdersBySupplierId(user.getStaffId());
+        });
   }
 
   public Uni<PurchaseOrderDTO> getPurchaseOrderById(Long id) {
-    // TODO: Remove hardcode after vendor auth is implemented
-    String loginId = "EVECONPL01";
-    return poRepository.fetchPurchaseOrderById(id, loginId)
-        .onItem().ifNull().failWith(() -> new IllegalArgumentException("Purchase Order not found"));
-    // return currentUserService.getCurrentUserLoginId()
-    // .onItem().transformToUni(loginId -> {
-    // if (loginId == null || loginId.isBlank()) {
-    // return Uni.createFrom().failure(
-    // new IllegalStateException("Unable to determine logged-in vendor"));
-    // }
-    // return poRepository.fetchPurchaseOrderById(id, loginId)
-    // .onItem().ifNull().failWith(() ->
-    // new IllegalArgumentException("Purchase Order not found"));
-    // });
+    return currentUserService.getCurrentUser()
+        .onItem().transformToUni(user -> {
+          if (user == null || user.getStaffId() == null || user.getStaffId().isBlank()) {
+            return Uni.createFrom().failure(
+                new IllegalStateException("Unable to determine logged-in vendor"));
+          }
+          return poRepository.fetchPurchaseOrderById(id, user.getStaffId())
+              .onItem().ifNull().failWith(() -> new IllegalArgumentException("Purchase Order not found"));
+        });
   }
 
   public Uni<List<PurchaseOrderDetailDTO>> getPurchaseOrderDetails(Long poId) {
@@ -82,13 +73,13 @@ public class PurchaseOrderService {
    * Get PO statistics for vendor dashboard
    */
   public Uni<Map<String, Object>> getPOStats() {
-    return currentUserService.getCurrentUserLoginId()
-        .onItem().transformToUni(vendorId -> {
-          if (vendorId == null || vendorId.isBlank()) {
+    return currentUserService.getCurrentUser()
+        .onItem().transformToUni(user -> {
+          if (user == null || user.getStaffId() == null || user.getStaffId().isBlank()) {
             return Uni.createFrom().failure(
                 new IllegalStateException("Unable to determine logged-in vendor"));
           }
-
+          String vendorId = user.getStaffId();
           Uni<Long> openPOCount = poRepository.countOpenPOs(vendorId);
           Uni<BigDecimal> totalValue = poRepository.getTotalOpenPOValue(vendorId);
 

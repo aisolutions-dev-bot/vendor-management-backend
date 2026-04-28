@@ -21,39 +21,30 @@ public class VendorDashboardService {
   @Inject
   CurrentUserService currentUserService;
 
-  // TODO: Remove hardcode after vendor auth is implemented
-  private static final String HARDCODED_VENDOR_ID = "EVECONPL01";
-
   /**
    * Get dashboard statistics for the logged-in vendor.
    * Uses a single database query to minimize connection usage.
    */
   public Uni<VendorDashboardDTO> getStats(LocalDate fromDate, LocalDate toDate) {
-    // TODO: Remove hardcode after vendor auth is implemented
-    String vendorId = HARDCODED_VENDOR_ID;
-
-    log.info("Fetching dashboard stats for vendor: {} from {} to {}", vendorId, fromDate, toDate);
-
-    return dashboardRepository.getDashboardStats(vendorId, fromDate, toDate)
-        .onFailure().recoverWithItem(() -> {
-          log.error("Failed to fetch dashboard stats, returning zeros");
-          return VendorDashboardDTO.builder()
-              .openPO(0L)
-              .pendingVerification(0L)
-              .pendingApproval(0L)
-              .pendingPayment(0L)
-              .paidInvoices(0L)
-              .build();
+    return currentUserService.getCurrentUser()
+        .onItem().transformToUni(user -> {
+          if (user == null || user.getStaffId() == null || user.getStaffId().isBlank()) {
+            return Uni.createFrom().failure(
+                new IllegalStateException("Unable to determine logged-in vendor"));
+          }
+          String vendorId = user.getStaffId();
+          log.info("Fetching dashboard stats for vendor: {} from {} to {}", vendorId, fromDate, toDate);
+          return dashboardRepository.getDashboardStats(vendorId, fromDate, toDate)
+              .onFailure().recoverWithItem(() -> {
+                log.error("Failed to fetch dashboard stats, returning zeros");
+                return VendorDashboardDTO.builder()
+                    .openPO(0L)
+                    .pendingVerification(0L)
+                    .pendingApproval(0L)
+                    .pendingPayment(0L)
+                    .paidInvoices(0L)
+                    .build();
+              });
         });
-
-    // TODO: Uncomment after vendor auth is implemented
-    // return currentUserService.getCurrentUserLoginId()
-    // .onItem().transformToUni(vendorId -> {
-    // if (vendorId == null || vendorId.isBlank()) {
-    // return Uni.createFrom().failure(
-    // new IllegalStateException("Unable to determine logged-in vendor"));
-    // }
-    // return dashboardRepository.getDashboardStats(vendorId, fromDate, toDate);
-    // });
   }
 }

@@ -56,8 +56,8 @@ public class PurchaseOrder {
   @Column(name = "Terms", length = 15)
   private String terms;
 
-  @Column(name = "TermsDay", precision = 5, scale = 0)
-  private BigDecimal termsDay;
+  @Column(name = "TermsDay", length = 11)
+  private Integer termsDay;
 
   @Column(name = "ContactType", length = 10)
   private String contactType;

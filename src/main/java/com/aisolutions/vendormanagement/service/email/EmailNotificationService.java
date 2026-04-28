@@ -1,57 +1,63 @@
-
 package com.aisolutions.vendormanagement.service.email;
 
-import com.aisolutions.shared.service.email.*;
+import com.aisolutions.shared.service.email.EmailConfig;
+import com.aisolutions.shared.service.email.EmailService;
+import com.aisolutions.shared.service.email.EmailAttachment;
+import com.aisolutions.vendormanagement.config.SmtpConfig;
 
+import io.vertx.mutiny.core.Vertx;
+import io.vertx.mutiny.core.Context;
 import io.smallrye.mutiny.Uni;
-import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import jakarta.inject.Inject;
+import lombok.extern.slf4j.Slf4j;
+import org.eclipse.microprofile.context.ManagedExecutor;
 
-import java.io.IOException;
-import java.security.GeneralSecurityException;
 import java.util.List;
 
 /**
- * Quarkus wrapper for the shared EmailService using injected config.
+ * Reactive SMTP email service using shared EmailService and injected SmtpConfig.
  */
+@Slf4j
 @ApplicationScoped
 public class EmailNotificationService {
 
-  @ConfigProperty(name = "google.oauth.client-id")
-  String clientId;
+  private final EmailService emailService;
 
-  @ConfigProperty(name = "google.oauth.client-secret")
-  String clientSecret;
+  @Inject
+  ManagedExecutor managedExecutor;
 
-  @ConfigProperty(name = "google.oauth.refresh-token")
-  String refreshToken;
+  @Inject
+  Vertx vertx;
 
-  @ConfigProperty(name = "mail.sender-email")
-  String senderEmail;
-
-  private EmailService emailService;
-
-  @PostConstruct
-  void init() throws GeneralSecurityException, IOException {
+  public EmailNotificationService(SmtpConfig smtpConfig) {
     EmailConfig config = new EmailConfig();
-    config.setClientId(clientId);
-    config.setClientSecret(clientSecret);
-    config.setRefreshToken(refreshToken);
-    config.setSenderEmail(senderEmail);
+    config.setSenderEmail(smtpConfig.senderEmail());
+    config.setSmtpPassword(smtpConfig.password());
 
-    this.emailService = new EmailService(config);
+    try {
+      this.emailService = new EmailService(config, smtpConfig.host(), smtpConfig.port());
+    } catch (Exception e) {
+      throw new IllegalStateException("Failed to initialize EmailService with provided SMTP configuration", e);
+    }
   }
 
-  public Uni<Boolean> sendReactive(String to, String subject, String body) {
+  public Uni<Boolean> sendReactive(String to, String subject, String htmlBody) {
+    Context context = vertx.getOrCreateContext();
+
     return Uni.createFrom().item(() -> {
-      emailService.sendEmail(to, subject, body); // blocking call
-      return true;
-    }).onFailure().recoverWithItem(false);
-  }
-
-  public void sendEmail(String to, String subject, String body) {
-    emailService.sendEmail(to, subject, body);
+      try {
+        log.info("Sending email to: {} subject: {}", to, subject);
+        emailService.sendEmail(to, subject, htmlBody);
+        return true;
+      } catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    })
+        .runSubscriptionOn(managedExecutor)
+        .emitOn(context::runOnContext)
+        .onFailure().invoke(e -> log.error("Failed to send email to {}: {}", to, e.getMessage()))
+        .onFailure().recoverWithItem(false);
   }
 
   public void sendEmailWithAttachments(String to, String subject, String body, List<EmailAttachment> attachments) {

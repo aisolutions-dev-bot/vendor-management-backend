@@ -25,7 +25,7 @@ public class PurchaseOrderDTO {
     private String referenceOur;
     private String referenceYour;
     private String terms;
-    private BigDecimal termsDay;
+    private Integer termsDay;
     private String contactType;
     private String supplierId;
     private String supplierName;
