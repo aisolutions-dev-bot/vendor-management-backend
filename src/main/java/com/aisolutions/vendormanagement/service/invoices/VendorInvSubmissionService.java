@@ -150,7 +150,7 @@ public class VendorInvSubmissionService {
                           // Create header entity from PO data
                           VendorInvSubmission invoice = new VendorInvSubmission();
                           invoice.setInvoiceNumber(invoiceNumber);
-                          invoice.setInvoiceStatus("OPEN");
+                          invoice.setInvoiceStatus("SUBMIT");
                           invoice.setInvoiceDate(LocalDateTime.now());
                           invoice.setVendorId(vendorId);
                           invoice.setVendorName(po.getSupplierName());
@@ -315,7 +315,7 @@ public class VendorInvSubmissionService {
                   mapDtoToEntity(headerDto, invoice);
                   invoice.setInvoiceNumber(invoiceNumber);
                   invoice.setVendorId(vendorId);
-                  invoice.setInvoiceStatus("OPEN");
+                  invoice.setInvoiceStatus("SUBMIT");
                   invoice.setEntryStaff(vendorId);
                   invoice.setEntryDate(LocalDateTime.now());
 
