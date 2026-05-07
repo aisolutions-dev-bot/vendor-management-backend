@@ -30,6 +30,9 @@ public class InvoiceActionResource {
   private static final String C_WARN         = "#d97706";
   private static final String C_WARN_SOFT    = "#fef3c7";
   private static final String C_WARN_BORDER  = "#fde68a";
+  private static final String C_INFO         = "#2563eb";
+  private static final String C_INFO_SOFT    = "#dbeafe";
+  private static final String C_INFO_BORDER  = "#93c5fd";
   private static final String C_BG           = "#f8fafc";
   private static final String C_CARD         = "#ffffff";
   private static final String C_BORDER       = "#e2e8f0";
@@ -70,43 +73,70 @@ public class InvoiceActionResource {
                 .build());
           }
 
+          boolean isReview = result.result == TokenResult.REVIEWED;
           boolean isApprove = result.result == TokenResult.APPROVED;
-          String reason  = isApprove ? "Approved via email" : "Rejected via email";
           String staffId = result.approvalStaffId != null ? result.approvalStaffId : "SYSTEM";
           String invoiceNumber = result.invoiceNumber != null ? result.invoiceNumber : "N/A";
 
-          Uni<Response> adminCall = isApprove
-              ? vendorAdminClient.systemApproveInvoice(result.invoiceId, new SystemActionRequest(reason, staffId))
-              : vendorAdminClient.systemRejectInvoice(result.invoiceId, new SystemActionRequest(reason, staffId));
-
-          return adminCall
-              .onItem().transform(adminResponse -> {
-                if (adminResponse.getStatus() < 400) {
-                  log.info("Email action success: {} invoiceId={}", result.result, result.invoiceId);
-                  if (isApprove) {
+          Uni<Response> adminCall;
+          if (isReview) {
+            adminCall = vendorAdminClient.systemReviewInvoice(result.invoiceId)
+                .onItem().transform(adminResponse -> {
+                  if (adminResponse.getStatus() < 400) {
+                    log.info("Email action success: REVIEWED invoiceId={}", result.invoiceId);
                     return Response.ok(htmlPage(
-                        "Invoice Approved",
-                        "Invoice <strong>#" + escHtml(invoiceNumber) + "</strong> has been successfully approved. The vendor will be notified.",
-                        "success", "✓")).build();
+                        "Invoice Under Review",
+                        "Invoice <strong>#" + escHtml(invoiceNumber) + "</strong> has been moved to review. An approval decision will follow.",
+                        "info", "🔍")).build();
                   } else {
-                    return Response.ok(htmlPage(
-                        "Invoice Rejected",
-                        "Invoice <strong>#" + escHtml(invoiceNumber) + "</strong> has been rejected.",
-                        "danger", "✕")).build();
+                    log.error("Vendor admin backend error: {} for invoiceId={}", adminResponse.getStatus(), result.invoiceId);
+                    return Response.serverError()
+                        .entity(htmlPage("Action Failed", "The action could not be completed. Please try again or contact your administrator.", "danger", "!"))
+                        .build();
                   }
-                } else {
-                  log.error("Vendor admin backend error: {} for invoiceId={}", adminResponse.getStatus(), result.invoiceId);
+                })
+                .onFailure().recoverWithItem(e -> {
+                  log.error("Failed to call vendor-admin-backend for invoiceId={}: {}", result.invoiceId, e.getMessage());
                   return Response.serverError()
-                      .entity(htmlPage("Action Failed", "The action could not be completed. Please try again or contact your administrator.", "danger", "!"))
+                      .entity(htmlPage("Action Failed", "A system error occurred. Please contact your administrator.", "danger", "!"))
                       .build();
-                }
-              })
-              .onFailure().recoverWithItem(e -> {
-                log.error("Failed to call vendor-admin-backend for invoiceId={}: {}", result.invoiceId, e.getMessage());
-                return Response.serverError()
-                    .entity(htmlPage("Action Failed", "A system error occurred. Please contact your administrator.", "danger", "!"))
-                    .build();
-              });
+                });
+          } else {
+            String reason = isApprove ? "Approved via email" : "Rejected via email";
+            adminCall = isApprove
+                ? vendorAdminClient.systemApproveInvoice(result.invoiceId, new SystemActionRequest(reason, staffId))
+                : vendorAdminClient.systemRejectInvoice(result.invoiceId, new SystemActionRequest(reason, staffId));
+
+            adminCall = adminCall
+                .onItem().transform(adminResponse -> {
+                  if (adminResponse.getStatus() < 400) {
+                    log.info("Email action success: {} invoiceId={}", result.result, result.invoiceId);
+                    if (isApprove) {
+                      return Response.ok(htmlPage(
+                          "Invoice Approved",
+                          "Invoice <strong>#" + escHtml(invoiceNumber) + "</strong> has been successfully approved. The vendor will be notified. You can also take action via the AI Solutions portal.",
+                          "success", "✓")).build();
+                    } else {
+                      return Response.ok(htmlPage(
+                          "Invoice Rejected",
+                          "Invoice <strong>#" + escHtml(invoiceNumber) + "</strong> has been rejected. You can also take action via the AI Solutions portal.",
+                          "danger", "✕")).build();
+                    }
+                  } else {
+                    log.error("Vendor admin backend error: {} for invoiceId={}", adminResponse.getStatus(), result.invoiceId);
+                    return Response.serverError()
+                        .entity(htmlPage("Action Failed", "The action could not be completed. Please try again or contact your administrator.", "danger", "!"))
+                        .build();
+                  }
+                })
+                .onFailure().recoverWithItem(e -> {
+                  log.error("Failed to call vendor-admin-backend for invoiceId={}: {}", result.invoiceId, e.getMessage());
+                  return Response.serverError()
+                      .entity(htmlPage("Action Failed", "A system error occurred. Please contact your administrator.", "danger", "!"))
+                      .build();
+                });
+          }
+          return adminCall;
         });
   }
 
@@ -124,6 +154,11 @@ public class InvoiceActionResource {
         bgColor = C_DANGER_SOFT; borderColor = C_DANGER_BORDER;
         iconBg = C_DANGER_SOFT; iconColor = C_DANGER;
         badgeColor = "#7f1d1d"; badgeBg = C_DANGER_SOFT;
+      }
+      case "info" -> {
+        bgColor = C_INFO_SOFT; borderColor = C_INFO_BORDER;
+        iconBg = C_INFO_SOFT; iconColor = C_INFO;
+        badgeColor = "#1e3a5f"; badgeBg = C_INFO_SOFT;
       }
       default -> { // warning
         bgColor = C_WARN_SOFT; borderColor = C_WARN_BORDER;

@@ -30,7 +30,9 @@ public class VendorInvSubmissionRepository implements PanacheRepositoryBase<Vend
           i.vendorAttentionTo, i.currency, i.exchangeRate, i.subTotalForeign,
           i.taxForeign, i.totalForeign, i.subTotalBase, i.taxBase, i.totalBase,
           i.remarks, i.exchangeRateDate, i.balanceAmt, i.projectCode, i.referenceOur,
-          i.inChargeStaff, i.paymentVoucher, i.assignedStaff
+          i.inChargeStaff, i.paymentVoucher, i.assignedStaff,
+          i.reviewedBy, i.reviewDate, i.approvedBy, i.approveDate,
+          i.rejectedBy, i.rejectDate
       )
       FROM VendorInvSubmission i
       """;
@@ -259,7 +261,7 @@ public class VendorInvSubmissionRepository implements PanacheRepositoryBase<Vend
     return getSession().flatMap(session -> session.createQuery("""
         SELECT COALESCE(SUM(i.totalForeign), 0)
         FROM VendorInvSubmission i
-        WHERE i.vendorId = :vendorId AND i.invoiceStatus IN ('OPEN', 'PENDING')
+        WHERE i.vendorId = :vendorId AND i.invoiceStatus IN ('OPEN', 'PENDING', 'SUBMIT')
         """, java.math.BigDecimal.class)
         .setParameter("vendorId", vendorId)
         .getSingleResult());

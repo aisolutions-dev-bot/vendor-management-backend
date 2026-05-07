@@ -56,7 +56,7 @@ public class InvoiceActionTokenService {
   // #region Validate & Consume
 
   public enum TokenResult {
-    APPROVED, REJECTED, EXPIRED, ALREADY_USED, NOT_FOUND
+    REVIEWED, APPROVED, REJECTED, EXPIRED, ALREADY_USED, NOT_FOUND
   }
 
   public static class TokenValidationResult {
@@ -109,9 +109,12 @@ public class InvoiceActionTokenService {
                       log.warn("Token race condition — already consumed: invoiceId={}", token.getInvoiceId());
                       return Uni.createFrom().item(TokenValidationResult.of(TokenResult.ALREADY_USED));
                     }
-                    TokenResult outcome = "APPROVE".equals(token.getAction())
-                        ? TokenResult.APPROVED
-                        : TokenResult.REJECTED;
+                    TokenResult outcome;
+                    switch (token.getAction()) {
+                      case "REVIEW"  -> outcome = TokenResult.REVIEWED;
+                      case "APPROVE" -> outcome = TokenResult.APPROVED;
+                      default        -> outcome = TokenResult.REJECTED;
+                    }
                     log.info("Token consumed: invoiceId={} action={}", token.getInvoiceId(), token.getAction());
                     return Uni.createFrom().item(
                         new TokenValidationResult(outcome, token.getInvoiceId(), token.getInvoiceNumber(), token.getAction(), token.getApprovalStaffId()));

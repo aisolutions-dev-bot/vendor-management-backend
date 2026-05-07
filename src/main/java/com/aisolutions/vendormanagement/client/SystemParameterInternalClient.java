@@ -22,7 +22,7 @@ import jakarta.ws.rs.core.MediaType;
 public interface SystemParameterInternalClient {
 
   @GET
-  @Path("/vendor-invoice-approval")
+  @Path("/vendor-invoice-config")
   @Produces(MediaType.APPLICATION_JSON)
-  Uni<VendorInvoiceApprovalConfigDTO> getVendorInvoiceApprovalConfig();
+  Uni<VendorInvoiceApprovalConfigDTO> getVendorInvoiceConfig();
 }

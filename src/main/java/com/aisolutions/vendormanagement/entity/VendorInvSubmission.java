@@ -113,4 +113,21 @@ public class VendorInvSubmission {
   @Column(name = "AssignedStaff", length = 30)
   private String assignedStaff;
 
+  @Column(name = "ReviewedBy", length = 25)
+  private String reviewedBy;
+
+  @Column(name = "ReviewDate")
+  private LocalDateTime reviewDate;
+
+  @Column(name = "ApprovedBy", length = 25)
+  private String approvedBy;
+
+  @Column(name = "ApproveDate")
+  private LocalDateTime approveDate;
+
+  @Column(name = "RejectedBy", length = 25)
+  private String rejectedBy;
+
+  @Column(name = "RejectDate")
+  private LocalDateTime rejectDate;
 }

@@ -30,6 +30,12 @@ public interface VendorAdminInvoiceClient {
   @Produces(MediaType.APPLICATION_JSON)
   Uni<Response> systemRejectInvoice(@PathParam("id") Long id, SystemActionRequest request);
 
+  @PUT
+  @Path("/{id}/system-review")
+  @Consumes(MediaType.APPLICATION_JSON)
+  @Produces(MediaType.APPLICATION_JSON)
+  Uni<Response> systemReviewInvoice(@PathParam("id") Long id);
+
   class SystemActionRequest {
     public String reason;
     public String staffId;

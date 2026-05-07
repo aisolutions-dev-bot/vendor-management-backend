@@ -43,4 +43,10 @@ public class VendorInvSubmissionDTO {
   private String inChargeStaff;
   private String paymentVoucher;
   private String assignedStaff;
+  private String reviewedBy;
+  private LocalDateTime reviewDate;
+  private String approvedBy;
+  private LocalDateTime approveDate;
+  private String rejectedBy;
+  private LocalDateTime rejectDate;
 }

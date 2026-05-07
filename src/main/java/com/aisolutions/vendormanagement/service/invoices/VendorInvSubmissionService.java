@@ -233,17 +233,35 @@ public class VendorInvSubmissionService {
    * Send email notification to inCharge staff after invoice creation.
    * Generates approve + reject tokens and sends email. Failures are logged but don't fail the invoice creation.
    */
-  private static final String PARAM_VENDOR_INV_APPROVAL_IN_CHARGE = "VENDOR-INV-APPROVAL-IN-CHARGE";
+  private static final String PARAM_VENDOR_INV_REVIEW_ENABLED = "VENDOR-INV-APPRV-REVIEW";
+  private static final String PARAM_VENDOR_INV_REVIEW_IN_CHARGE = "VENDOR-INV-APPR-REVIEW-IN-CHARGE";
+  private static final String PARAM_VENDOR_INV_APPROVE_IN_CHARGE = "VENDOR-INV-APPR-APPROVE-IN-CHARGE";
 
   private Uni<Void> sendInvoiceNotification(VendorInvSubmissionDTO invoice) {
-    return systemParameterClient.getVendorInvoiceApprovalConfig()
+    return systemParameterClient.getVendorInvoiceConfig()
         .onItem().transformToUni(config -> {
-          if (config == null || config.getStaffId() == null || config.getStaffId().isBlank()) {
-            log.warn("System parameter {} not configured, skipping email notification for invoice {}",
-                PARAM_VENDOR_INV_APPROVAL_IN_CHARGE, invoice.getInvoiceNumber());
+          if (config == null) {
+            log.warn("Vendor invoice config not available, skipping email notification for invoice {}",
+                invoice.getInvoiceNumber());
             return Uni.createFrom().voidItem();
           }
-          return sendToStaff(invoice, config.getStaffId());
+          if (config.isReviewEnabled()) {
+            // Send to review staff with review + approve + reject tokens
+            String reviewStaffId = config.getReviewStaffId();
+            if (reviewStaffId == null || reviewStaffId.isBlank()) {
+              log.warn("VENDOR-INV-APPR-REVIEW-IN-CHARGE not configured for invoice {}", invoice.getInvoiceNumber());
+              return Uni.createFrom().voidItem();
+            }
+            return sendToReviewStaff(invoice, reviewStaffId);
+          } else {
+            // Send to approval staff with approve + reject tokens (existing behavior)
+            String approvalStaffId = config.getApprovalStaffId();
+            if (approvalStaffId == null || approvalStaffId.isBlank()) {
+              log.warn("VENDOR-INV-APPR-APPROVE-IN-CHARGE not configured for invoice {}", invoice.getInvoiceNumber());
+              return Uni.createFrom().voidItem();
+            }
+            return sendToStaff(invoice, approvalStaffId);
+          }
         })
         .onFailure().invoke(e -> log.error("Failed to fetch approval config for invoice {}: {}",
             invoice.getInvoiceNumber(), e.getMessage()))
@@ -286,6 +304,39 @@ public class VendorInvSubmissionService {
         .replaceWithVoid();
   }
 
+  private Uni<Void> sendToReviewStaff(VendorInvSubmissionDTO invoice, String staffId) {
+    return staffClient.getStaff(staffId)
+        .onItem().ifNull().failWith(new IllegalStateException("Staff not found: " + staffId))
+        .onItem().transformToUni(staff -> {
+          String email = staff.getEffectiveEmail();
+          if (email == null || email.isBlank()) return Uni.createFrom().voidItem();
+          return generateReviewEmailTokens(invoice, staffId, staff.getName(), email);
+        })
+        .onFailure().invoke(e -> log.error("Failed to send review notification for invoice {}: {}",
+            invoice.getInvoiceNumber(), e.getMessage()))
+        .onFailure().recoverWithNull()
+        .replaceWithVoid();
+  }
+
+  private Uni<Void> generateReviewEmailTokens(VendorInvSubmissionDTO invoice, String staffId, String staffName, String email) {
+    Long invId = invoice.getUniqId();
+    String invNum = invoice.getInvoiceNumber();
+    return tokenService.generateToken(invId, invNum, "REVIEW", staffId)
+        .onItem().transformToUni(reviewToken ->
+            tokenService.generateToken(invId, invNum, "APPROVE", staffId)
+                .onItem().transformToUni(approveToken ->
+                    tokenService.generateToken(invId, invNum, "REJECT", staffId)
+                        .onItem().transformToUni(rejectToken -> {
+                          String reviewUrl  = actionBaseUrl + "/api/v1/invoices/action?token=" + reviewToken;
+                          String approveUrl = actionBaseUrl + "/api/v1/invoices/action?token=" + approveToken;
+                          String rejectUrl  = actionBaseUrl + "/api/v1/invoices/action?token=" + rejectToken;
+                          String body = InvoiceEmailTemplate.buildReviewEmail(invoice, staffName, reviewUrl, approveUrl, rejectUrl);
+                          String subject = "Invoice Review Required — " + invNum;
+                          return emailService.sendReactive(email, subject, body);
+                        })
+                )
+        ).onItem().ignore().andContinueWithNull();
+  }
 
   /**
    * Create a new invoice submission with line items (legacy method for full DTO)
@@ -367,15 +418,17 @@ public class VendorInvSubmissionService {
           Uni<Long> openCount = invoiceRepository.countByStatus(vendorId, "OPEN");
           Uni<Long> pendingCount = invoiceRepository.countByStatus(vendorId, "PENDING");
           Uni<Long> approvedCount = invoiceRepository.countByStatus(vendorId, "APPROVED");
+          Uni<Long> submitCount = invoiceRepository.countByStatus(vendorId, "SUBMIT");
           Uni<BigDecimal> totalPending = invoiceRepository.getTotalPendingAmount(vendorId);
 
-          return Uni.combine().all().unis(openCount, pendingCount, approvedCount, totalPending)
+          return Uni.combine().all().unis(openCount, pendingCount, approvedCount, submitCount, totalPending)
               .asTuple()
               .map(tuple -> Map.of(
                   "openInvoices", tuple.getItem1(),
                   "pendingInvoices", tuple.getItem2(),
                   "approvedInvoices", tuple.getItem3(),
-                  "totalPendingAmount", tuple.getItem4()));
+                  "submitInvoices", tuple.getItem4(),
+                  "totalPendingAmount", tuple.getItem5()));
         });
   }
 
@@ -440,6 +493,12 @@ public class VendorInvSubmissionService {
     dto.setInChargeStaff(entity.getInChargeStaff());
     dto.setPaymentVoucher(entity.getPaymentVoucher());
     dto.setAssignedStaff(entity.getAssignedStaff());
+    dto.setReviewedBy(entity.getReviewedBy());
+    dto.setReviewDate(entity.getReviewDate());
+    dto.setApprovedBy(entity.getApprovedBy());
+    dto.setApproveDate(entity.getApproveDate());
+    dto.setRejectedBy(entity.getRejectedBy());
+    dto.setRejectDate(entity.getRejectDate());
     return dto;
   }
 
