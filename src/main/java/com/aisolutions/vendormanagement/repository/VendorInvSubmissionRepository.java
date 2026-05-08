@@ -129,6 +129,17 @@ public class VendorInvSubmissionRepository implements PanacheRepositoryBase<Vend
   }
 
   /**
+   * Fetch a single invoice by ID without vendor ownership check (system use only)
+   */
+  public Uni<VendorInvSubmissionDTO> fetchInvoiceByIdSystem(Long id) {
+    return getSession().flatMap(session -> session.createQuery(
+        INV_SELECT + "WHERE i.uniqId = :id",
+        VendorInvSubmissionDTO.class)
+        .setParameter("id", id)
+        .getSingleResultOrNull());
+  }
+
+  /**
    * Fetch a single invoice by ID with vendor ownership check
    */
   public Uni<VendorInvSubmissionDTO> fetchInvoiceById(Long id, String vendorId) {

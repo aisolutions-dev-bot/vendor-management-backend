@@ -2,6 +2,7 @@ package com.aisolutions.vendormanagement.resource.v1.invoices;
 
 import com.aisolutions.vendormanagement.client.VendorAdminInvoiceClient;
 import com.aisolutions.vendormanagement.client.VendorAdminInvoiceClient.SystemActionRequest;
+import com.aisolutions.vendormanagement.service.invoices.VendorInvSubmissionService;
 import com.aisolutions.vendormanagement.service.token.InvoiceActionTokenService;
 import com.aisolutions.vendormanagement.service.token.InvoiceActionTokenService.TokenResult;
 import com.aisolutions.vendormanagement.service.token.InvoiceActionTokenService.TokenValidationResult;
@@ -43,6 +44,9 @@ public class InvoiceActionResource {
   @Inject
   InvoiceActionTokenService tokenService;
 
+  @Inject
+  VendorInvSubmissionService submissionService;
+
   @RestClient
   VendorAdminInvoiceClient vendorAdminClient;
 
@@ -81,13 +85,19 @@ public class InvoiceActionResource {
           Uni<Response> adminCall;
           if (isReview) {
             adminCall = vendorAdminClient.systemReviewInvoice(result.invoiceId)
+                .onItem().call(adminResponse -> {
+                  if (adminResponse.getStatus() < 400) {
+                    return submissionService.sendApprovalRequestEmail(result.invoiceId);
+                  }
+                  return Uni.createFrom().voidItem();
+                })
                 .onItem().transform(adminResponse -> {
                   if (adminResponse.getStatus() < 400) {
                     log.info("Email action success: REVIEWED invoiceId={}", result.invoiceId);
                     return Response.ok(htmlPage(
-                        "Invoice Under Review",
-                        "Invoice <strong>#" + escHtml(invoiceNumber) + "</strong> has been moved to review. An approval decision will follow.",
-                        "info", "🔍")).build();
+                        "Invoice Reviewed",
+                        "Invoice <strong>#" + escHtml(invoiceNumber) + "</strong> has been reviewed successfully and is pending approval.",
+                        "success", "✓")).build();
                   } else {
                     log.error("Vendor admin backend error: {} for invoiceId={}", adminResponse.getStatus(), result.invoiceId);
                     return Response.serverError()

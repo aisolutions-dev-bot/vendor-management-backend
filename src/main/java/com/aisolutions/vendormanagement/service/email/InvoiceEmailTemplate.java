@@ -140,7 +140,6 @@ public class InvoiceEmailTemplate {
       VendorInvSubmissionDTO invoice,
       String recipientName,
       String reviewUrl,
-      String approveUrl,
       String rejectUrl) {
 
     return "<!DOCTYPE html>" +
@@ -170,7 +169,7 @@ public class InvoiceEmailTemplate {
         "<tr><td style='padding:32px 40px 0;'>" +
         "<p style='margin:0;font-size:15px;color:" + COLOR_TEXT + ";'>Hi <strong>" + escHtml(recipientName) + "</strong>,</p>" +
         "<p style='margin:10px 0 0;font-size:14px;color:" + COLOR_TEXT_MUTED + ";line-height:1.65;'>" +
-        "A new vendor invoice has been submitted and requires your review. Please review the details below and take action." +
+        "A new vendor invoice has been submitted and requires your review. Click <strong>Review</strong> to approve for further processing, or <strong>Reject</strong> to decline." +
         "</p>" +
         "</td></tr>" +
 
@@ -207,16 +206,11 @@ public class InvoiceEmailTemplate {
         "<td style='padding-right:12px;'>" +
         "<a href='" + reviewUrl + "' style='display:inline-block;background:" + COLOR_PRIMARY + ";color:#ffffff;text-decoration:none;" +
         "padding:14px 32px;border-radius:10px;font-size:14px;font-weight:700;letter-spacing:0.01em;box-shadow:0 2px 8px rgba(124,58,237,0.35);'>" +
-        "🔍 &nbsp;Review Invoice</a>" +
-        "</td>" +
-        "<td style='padding-right:12px;'>" +
-        "<a href='" + approveUrl + "' style='display:inline-block;background:" + COLOR_CARD + ";color:" + COLOR_PRIMARY + ";text-decoration:none;" +
-        "padding:13px 24px;border-radius:10px;font-size:13px;font-weight:700;border:2px solid " + COLOR_PRIMARY + ";letter-spacing:0.01em;'>" +
-        "✓ &nbsp;Approve</a>" +
+        "✓ &nbsp;Review</a>" +
         "</td>" +
         "<td>" +
         "<a href='" + rejectUrl + "' style='display:inline-block;background:" + COLOR_CARD + ";color:" + COLOR_REJECT + ";text-decoration:none;" +
-        "padding:13px 24px;border-radius:10px;font-size:13px;font-weight:700;border:2px solid " + COLOR_REJECT + ";letter-spacing:0.01em;'>" +
+        "padding:13px 32px;border-radius:10px;font-size:14px;font-weight:700;border:2px solid " + COLOR_REJECT + ";letter-spacing:0.01em;'>" +
         "✕ &nbsp;Reject</a>" +
         "</td>" +
         "</tr></table>" +

@@ -234,8 +234,8 @@ public class VendorInvSubmissionService {
    * Generates approve + reject tokens and sends email. Failures are logged but don't fail the invoice creation.
    */
   private static final String PARAM_VENDOR_INV_REVIEW_ENABLED = "VENDOR-INV-APPRV-REVIEW";
-  private static final String PARAM_VENDOR_INV_REVIEW_IN_CHARGE = "VENDOR-INV-APPR-REVIEW-IN-CHARGE";
-  private static final String PARAM_VENDOR_INV_APPROVE_IN_CHARGE = "VENDOR-INV-APPR-APPROVE-IN-CHARGE";
+  private static final String PARAM_VENDOR_INV_REVIEW_IN_CHARGE = "VENDOR-INV-APPRV-REVIEW-IN-CHARGE";
+  private static final String PARAM_VENDOR_INV_APPROVE_IN_CHARGE = "VENDOR-INV-APPRV-APPROVE-IN-CHARGE";
 
   private Uni<Void> sendInvoiceNotification(VendorInvSubmissionDTO invoice) {
     return systemParameterClient.getVendorInvoiceConfig()
@@ -249,7 +249,7 @@ public class VendorInvSubmissionService {
             // Send to review staff with review + approve + reject tokens
             String reviewStaffId = config.getReviewStaffId();
             if (reviewStaffId == null || reviewStaffId.isBlank()) {
-              log.warn("VENDOR-INV-APPR-REVIEW-IN-CHARGE not configured for invoice {}", invoice.getInvoiceNumber());
+              log.warn("VENDOR-INV-APPRV-REVIEW-IN-CHARGE not configured for invoice {}", invoice.getInvoiceNumber());
               return Uni.createFrom().voidItem();
             }
             return sendToReviewStaff(invoice, reviewStaffId);
@@ -257,7 +257,7 @@ public class VendorInvSubmissionService {
             // Send to approval staff with approve + reject tokens (existing behavior)
             String approvalStaffId = config.getApprovalStaffId();
             if (approvalStaffId == null || approvalStaffId.isBlank()) {
-              log.warn("VENDOR-INV-APPR-APPROVE-IN-CHARGE not configured for invoice {}", invoice.getInvoiceNumber());
+              log.warn("VENDOR-INV-APPRV-APPROVE-IN-CHARGE not configured for invoice {}", invoice.getInvoiceNumber());
               return Uni.createFrom().voidItem();
             }
             return sendToStaff(invoice, approvalStaffId);
@@ -323,19 +323,45 @@ public class VendorInvSubmissionService {
     String invNum = invoice.getInvoiceNumber();
     return tokenService.generateToken(invId, invNum, "REVIEW", staffId)
         .onItem().transformToUni(reviewToken ->
-            tokenService.generateToken(invId, invNum, "APPROVE", staffId)
-                .onItem().transformToUni(approveToken ->
-                    tokenService.generateToken(invId, invNum, "REJECT", staffId)
-                        .onItem().transformToUni(rejectToken -> {
-                          String reviewUrl  = actionBaseUrl + "/api/v1/invoices/action?token=" + reviewToken;
-                          String approveUrl = actionBaseUrl + "/api/v1/invoices/action?token=" + approveToken;
-                          String rejectUrl  = actionBaseUrl + "/api/v1/invoices/action?token=" + rejectToken;
-                          String body = InvoiceEmailTemplate.buildReviewEmail(invoice, staffName, reviewUrl, approveUrl, rejectUrl);
-                          String subject = "Invoice Review Required — " + invNum;
-                          return emailService.sendReactive(email, subject, body);
-                        })
-                )
+            tokenService.generateToken(invId, invNum, "REJECT", staffId)
+                .onItem().transformToUni(rejectToken -> {
+                  String reviewUrl = actionBaseUrl + "/api/v1/invoices/action?token=" + reviewToken;
+                  String rejectUrl = actionBaseUrl + "/api/v1/invoices/action?token=" + rejectToken;
+                  String body = InvoiceEmailTemplate.buildReviewEmail(invoice, staffName, reviewUrl, rejectUrl);
+                  String subject = "Invoice Review Request — " + invNum;
+                  return emailService.sendReactive(email, subject, body);
+                })
         ).onItem().ignore().andContinueWithNull();
+  }
+
+  /**
+   * Send approval request email to approval staff after review action.
+   * Generates APPROVE + REJECT tokens and emails the approver.
+   */
+  public Uni<Void> sendApprovalRequestEmail(Long invoiceId) {
+    return invoiceRepository.fetchInvoiceByIdSystem(invoiceId)
+        .onItem().transformToUni(invoice -> {
+          if (invoice == null) {
+            log.warn("Invoice {} not found, skipping approval request email", invoiceId);
+            return Uni.createFrom().voidItem();
+          }
+          return systemParameterClient.getVendorInvoiceConfig()
+              .onItem().transformToUni(config -> {
+                if (config == null) {
+                  log.warn("Vendor invoice config not available, skipping approval request email for {}", invoiceId);
+                  return Uni.createFrom().voidItem();
+                }
+                String approvalStaffId = config.getApprovalStaffId();
+                if (approvalStaffId == null || approvalStaffId.isBlank()) {
+                  log.warn("No approval staff configured, skipping approval request email for {}", invoiceId);
+                  return Uni.createFrom().voidItem();
+                }
+                return sendToStaff(invoice, approvalStaffId);
+              });
+        })
+        .onFailure().invoke(e -> log.error("Failed to send approval request email for invoice {}: {}", invoiceId, e.getMessage()))
+        .onFailure().recoverWithNull()
+        .replaceWithVoid();
   }
 
   /**
