@@ -42,9 +42,6 @@ WORKDIR /app
 
 COPY --from=builder /app/build/vendor-management-backend-0.0.1-runner.jar /app/
 
-# Expose Quarkus port
-
-EXPOSE 8082
 
 # Run the application
 
