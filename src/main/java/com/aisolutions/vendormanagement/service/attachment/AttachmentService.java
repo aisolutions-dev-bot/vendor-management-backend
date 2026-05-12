@@ -103,9 +103,9 @@ public class AttachmentService {
     }
 
     return currentUserService.getCurrentUser()
-      .onItem().transformToUni(currentUser ->
-
-        Panache.withTransaction(() -> 
+      .onItem().transformToUni(currentUser -> {
+        final String staffId = (currentUser != null) ? currentUser.getStaffId() : "SYSTEM";
+        return Panache.withTransaction(() ->
           attachmentRepository.createAttachment(
             moduleType,
             referenceCode,
@@ -113,10 +113,10 @@ public class AttachmentService {
             contentType,
             (long) fileData.length,
             fileData,
-            currentUser.getStaffId()
+            staffId
           )
-        ) 
-      )
+        );
+      })
       .onItem().transform(this::mapEntityToDTO);
   }
 

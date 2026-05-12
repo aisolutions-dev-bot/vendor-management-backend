@@ -1,6 +1,7 @@
 package com.aisolutions.vendormanagement.service;
 
-import org.eclipse.microprofile.rest.client.inject.RestClient;
+import com.aisolutions.vendormanagement.dto.UserDTO;
+import com.aisolutions.vendormanagement.service.auth.JwtClaimsExtractor;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -8,40 +9,37 @@ import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.aisolutions.vendormanagement.client.OrganizationAuthClient;
-import com.aisolutions.vendormanagement.dto.UserDTO;
-
+/**
+ * Retrieves the currently logged-in user by extracting claims directly from
+ * the JWT token in the incoming request — no external API call required.
+ *
+ * Previously this called OrganizationAuthClient#getCurrentUser which made
+ * an unnecessary roundtrip to the org API and failed whenever the token
+ * was not forwarded correctly, causing audit fields to store null or "SYSTEM".
+ */
 @ApplicationScoped
 public class CurrentUserService {
 
   private static final Logger log = LoggerFactory.getLogger(CurrentUserService.class);
 
   @Inject
-  @RestClient
-  OrganizationAuthClient authClient;
+  JwtClaimsExtractor jwtClaimsExtractor;
 
   public Uni<String> getCurrentUserLoginId() {
-    return authClient.getCurrentUser()
-        .onFailure().invoke(e -> {
-          log.error("Failed to retrieve current user from auth service: {}", e.getMessage());
-          e.printStackTrace();
-        })
-        .onFailure().recoverWithItem((UserDTO) null)
-        .onItem().transform(user -> {
-          if (user == null) {
-            log.warn("Current user is null - auth service may be unavailable");
-            return null;
-          }
-          return user.getSecLoginId();
-        });
+    String staffId = jwtClaimsExtractor.extractStaffId();
+    if (staffId.isBlank()) {
+      log.warn("No staffId found in JWT — request may be missing Authorization header");
+      return Uni.createFrom().item((String) null);
+    }
+    return Uni.createFrom().item(staffId);
   }
 
   public Uni<UserDTO> getCurrentUser() {
-    return authClient.getCurrentUser()
-        .onFailure().invoke(e -> {
-          log.error("Failed to retrieve current user from auth service: {}", e.getMessage());
-          e.printStackTrace();
-        })
-        .onFailure().recoverWithItem((UserDTO) null);
+    String staffId = jwtClaimsExtractor.extractStaffId();
+    if (staffId.isBlank()) {
+      log.warn("No staffId found in JWT — request may be missing Authorization header");
+      return Uni.createFrom().item((UserDTO) null);
+    }
+    return Uni.createFrom().item(new UserDTO(staffId, null, false));
   }
 }
