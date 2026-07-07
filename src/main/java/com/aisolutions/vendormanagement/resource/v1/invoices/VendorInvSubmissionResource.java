@@ -4,6 +4,7 @@ import com.aisolutions.vendormanagement.dto.CreateInvoiceRequestDTO;
 import com.aisolutions.vendormanagement.dto.VendorInvSubmissionDTO;
 import com.aisolutions.vendormanagement.dto.VendorInvSubmissionDetailDTO;
 import com.aisolutions.vendormanagement.service.invoices.VendorInvSubmissionService;
+import com.aisolutions.vendormanagement.service.ocr.InvoiceOcrService;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
@@ -11,7 +12,11 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import lombok.extern.slf4j.Slf4j;
+import org.jboss.resteasy.reactive.RestForm;
+import org.jboss.resteasy.reactive.multipart.FileUpload;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 
@@ -23,6 +28,9 @@ public class VendorInvSubmissionResource {
 
   @Inject
   VendorInvSubmissionService invoiceService;
+
+  @Inject
+  InvoiceOcrService invoiceOcrService;
 
   // #region GET Endpoints
 
@@ -122,6 +130,49 @@ public class VendorInvSubmissionResource {
         .onFailure(IllegalStateException.class)
         .recoverWithItem(e -> Response.status(Response.Status.UNAUTHORIZED)
             .entity(Map.of("error", e.getMessage())).build());
+  }
+
+  /**
+   * POST /api/v1/vendor/invoices/extract
+   * Extracts header + line items from an uploaded vendor invoice image via AI OCR.
+   * Stateless — nothing is persisted; the frontend pre-fills the editable Invoice
+   * Details section with the result and the vendor confirms before saving via /manual.
+   */
+  @POST
+  @Path("/extract")
+  @Consumes(MediaType.MULTIPART_FORM_DATA)
+  public Uni<Response> extractInvoice(@RestForm("file") FileUpload file) {
+    if (file == null) {
+      return Uni.createFrom().item(
+          Response.status(Response.Status.BAD_REQUEST)
+              .entity(Map.of("error", "No invoice file provided"))
+              .build());
+    }
+
+    byte[] fileData;
+    try {
+      fileData = Files.readAllBytes(file.uploadedFile());
+    } catch (IOException e) {
+      log.error("Error reading uploaded invoice file: {}", e.getMessage());
+      return Uni.createFrom().item(
+          Response.serverError()
+              .entity(Map.of("error", "Failed to read uploaded file"))
+              .build());
+    }
+
+    return invoiceOcrService.extractFromFile(fileData, file.contentType())
+        .onItem().transform(result -> {
+          if (!result.isSuccess()) {
+            return Response.status(422).entity(result).build(); // 422 Unprocessable Entity
+          }
+          return Response.ok(result).build();
+        })
+        .onFailure().recoverWithItem(e -> {
+          log.error("Invoice extraction failed: {}", e.getMessage());
+          return Response.serverError()
+              .entity(Map.of("error", "Invoice extraction failed"))
+              .build();
+        });
   }
 
   // #endregion

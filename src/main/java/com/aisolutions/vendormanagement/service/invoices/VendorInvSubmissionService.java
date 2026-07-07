@@ -377,6 +377,15 @@ public class VendorInvSubmissionService {
           new IllegalArgumentException("Invoice header is required"));
     }
 
+    // Default tax to zero, then validate the vendor-confirmed key details
+    if (headerDto.getTaxForeign() == null) {
+      headerDto.setTaxForeign(BigDecimal.ZERO);
+    }
+    String validationError = validateInvoiceHeader(headerDto);
+    if (validationError != null) {
+      return Uni.createFrom().failure(new IllegalArgumentException(validationError));
+    }
+
     return currentUserService.getCurrentUser()
         .onItem().transformToUni(user -> {
           if (user == null || user.getStaffId() == null || user.getStaffId().isBlank()) {
@@ -424,6 +433,33 @@ public class VendorInvSubmissionService {
                 });
           });
         });
+  }
+
+  private static final BigDecimal AMOUNT_TOLERANCE = new BigDecimal("0.01");
+
+  /**
+   * Validates the vendor-confirmed invoice header before persisting.
+   * Returns an error message, or null when the header is valid.
+   */
+  private String validateInvoiceHeader(VendorInvSubmissionDTO h) {
+    if (h.getVendorInvoice() == null || h.getVendorInvoice().isBlank()) {
+      return "Vendor Invoice No. is required";
+    }
+    if (h.getInvoiceDate() == null) {
+      return "Invoice Date is required";
+    }
+    if (h.getSubTotalForeign() == null) {
+      return "Sub Total is required";
+    }
+    if (h.getTotalForeign() == null) {
+      return "Total is required";
+    }
+    BigDecimal tax = h.getTaxForeign() != null ? h.getTaxForeign() : BigDecimal.ZERO;
+    BigDecimal computed = h.getSubTotalForeign().add(tax);
+    if (computed.subtract(h.getTotalForeign()).abs().compareTo(AMOUNT_TOLERANCE) > 0) {
+      return "Sub Total + Tax must equal Total";
+    }
+    return null;
   }
 
   // #endregion
