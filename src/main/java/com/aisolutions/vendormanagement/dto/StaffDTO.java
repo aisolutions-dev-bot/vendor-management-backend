@@ -6,7 +6,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * Minimal staff DTO for org-api staff lookup.
- * Only fields needed for email notification are mapped.
+ * Only fields needed for email/WhatsApp notification are mapped.
  */
 @Data
 @NoArgsConstructor
@@ -17,6 +17,7 @@ public class StaffDTO {
   private String name;
   private String emailCompany;
   private String emailPerson;
+  private String telMobile;
 
   /**
    * Returns company email if available, falls back to personal email.

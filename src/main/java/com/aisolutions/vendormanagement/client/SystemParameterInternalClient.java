@@ -1,5 +1,6 @@
 package com.aisolutions.vendormanagement.client;
 
+import com.aisolutions.vendormanagement.dto.NotificationConfigDTO;
 import com.aisolutions.vendormanagement.dto.VendorInvoiceApprovalConfigDTO;
 import com.aisolutions.vendormanagement.service.auth.ServiceAuthHeaderFactory;
 
@@ -25,4 +26,9 @@ public interface SystemParameterInternalClient {
   @Path("/vendor-invoice-config")
   @Produces(MediaType.APPLICATION_JSON)
   Uni<VendorInvoiceApprovalConfigDTO> getVendorInvoiceConfig();
+
+  @GET
+  @Path("/notifications")
+  @Produces(MediaType.APPLICATION_JSON)
+  Uni<NotificationConfigDTO> getNotificationConfig();
 }

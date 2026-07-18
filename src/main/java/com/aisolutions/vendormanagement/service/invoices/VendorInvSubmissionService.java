@@ -3,17 +3,21 @@ package com.aisolutions.vendormanagement.service.invoices;
 import com.aisolutions.vendormanagement.client.StaffInternalClient;
 import com.aisolutions.vendormanagement.client.SystemParameterInternalClient;
 import com.aisolutions.vendormanagement.dto.CreateInvoiceRequestDTO;
+import com.aisolutions.vendormanagement.dto.NotificationConfigDTO;
 import com.aisolutions.vendormanagement.dto.PurchaseOrderDetailDTO;
+import com.aisolutions.vendormanagement.dto.StaffDTO;
 import com.aisolutions.vendormanagement.dto.VendorInvSubmissionDTO;
 import com.aisolutions.vendormanagement.dto.VendorInvSubmissionDetailDTO;
 import com.aisolutions.vendormanagement.entity.VendorInvSubmission;
 import com.aisolutions.vendormanagement.entity.VendorInvSubmissionDetail;
 import com.aisolutions.vendormanagement.repository.PurchaseOrderRepository;
 import com.aisolutions.vendormanagement.repository.VendorInvSubmissionRepository;
+import com.aisolutions.vendormanagement.repository.VendorRegistrationLookupRepository;
 import com.aisolutions.vendormanagement.service.CurrentUserService;
 import com.aisolutions.vendormanagement.service.email.EmailNotificationService;
 import com.aisolutions.vendormanagement.service.email.InvoiceEmailTemplate;
 import com.aisolutions.vendormanagement.service.token.InvoiceActionTokenService;
+import com.aisolutions.vendormanagement.service.whatsapp.InvoiceWhatsappNotificationService;
 
 import io.quarkus.hibernate.reactive.panache.Panache;
 import io.smallrye.mutiny.Uni;
@@ -46,6 +50,12 @@ public class VendorInvSubmissionService {
 
   @Inject
   EmailNotificationService emailService;
+
+  @Inject
+  InvoiceWhatsappNotificationService whatsappService;
+
+  @Inject
+  VendorRegistrationLookupRepository vendorRegLookupRepository;
 
   @RestClient
   StaffInternalClient staffClient;
@@ -224,9 +234,36 @@ public class VendorInvSubmissionService {
                               });
                         })))
                     .onItem().call(dto -> sendInvoiceNotification(dto))
+                    .onItem().call(dto -> sendVendorAcknowledgment(dto))
                     ;
           });
         });
+  }
+
+  /**
+   * Send an acknowledgment email to the vendor immediately after invoice creation,
+   * confirming receipt and that the invoice is pending review. Mirrors the vendor
+   * registration workflow's submission acknowledgment email. Failures are logged
+   * but never fail the invoice creation.
+   */
+  private Uni<Void> sendVendorAcknowledgment(VendorInvSubmissionDTO invoice) {
+    if (invoice.getVendorId() == null || invoice.getVendorId().isBlank()) {
+      return Uni.createFrom().voidItem();
+    }
+    return vendorRegLookupRepository.fetchEmailByVendorId(invoice.getVendorId())
+        .onItem().transformToUni(vendorEmail -> {
+          if (vendorEmail == null || vendorEmail.isBlank()) {
+            log.warn("sendVendorAcknowledgment: no email found for vendorId={}", invoice.getVendorId());
+            return Uni.createFrom().voidItem();
+          }
+          String subject = "Invoice Received — " + invoice.getInvoiceNumber();
+          String body = InvoiceEmailTemplate.buildVendorAcknowledgmentEmail(invoice, invoice.getVendorName());
+          return emailService.sendReactive(vendorEmail, subject, body).replaceWithVoid();
+        })
+        .onFailure().invoke(exception -> log.warn("Vendor acknowledgment email failed for invoice {}: {}",
+            invoice.getInvoiceNumber(), exception.getMessage()))
+        .onFailure().recoverWithNull()
+        .replaceWithVoid();
   }
 
   /**
@@ -270,13 +307,22 @@ public class VendorInvSubmissionService {
   }
 
   private Uni<Void> sendToStaff(VendorInvSubmissionDTO invoice, String staffId) {
-    return staffClient.getStaff(staffId)
-        .onItem().transformToUni(staff -> {
+    return Uni.combine().all().unis(
+            staffClient.getStaff(staffId),
+            systemParameterClient.getNotificationConfig()
+        ).asTuple()
+        .onItem().transformToUni(tuple -> {
+          StaffDTO staff = tuple.getItem1();
+          var notificationConfig = tuple.getItem2();
+
           String email = staff != null ? staff.getEffectiveEmail() : null;
           if (email == null || email.isBlank()) {
             log.warn("No email found for staff {}, skipping notification", staffId);
             return Uni.createFrom().voidItem();
           }
+          String mobileNumber = staff.getTelMobile();
+          boolean whatsappEnabled = notificationConfig != null && notificationConfig.isWhatsappEnabled()
+              && mobileNumber != null && !mobileNumber.isBlank();
 
           return tokenService.generateToken(invoice.getUniqId(), invoice.getInvoiceNumber(), "APPROVE", staffId)
               .onItem().transformToUni(approveToken ->
@@ -287,7 +333,7 @@ public class VendorInvSubmissionService {
                         String subject = "Invoice Approval Request — " + invoice.getInvoiceNumber();
                         String body = InvoiceEmailTemplate.build(invoice, staff.getName(), approveUrl, rejectUrl);
 
-                        return emailService.sendReactive(email, subject, body)
+                        Uni<Void> emailNotification = emailService.sendReactive(email, subject, body)
                             .onItem().invoke(sent -> {
                               if (Boolean.TRUE.equals(sent)) {
                                 log.info("Invoice notification sent to {} for invoice {}", email, invoice.getInvoiceNumber());
@@ -296,6 +342,14 @@ public class VendorInvSubmissionService {
                               }
                             })
                             .replaceWithVoid();
+
+                        Uni<Void> whatsappNotification = whatsappEnabled
+                            ? whatsappService.sendInvoiceApprovalNotification(
+                                mobileNumber, staff.getName(), invoice.getVendorName(), invoice.getInvoiceNumber(),
+                                approveToken, rejectToken).replaceWithVoid()
+                            : Uni.createFrom().voidItem();
+
+                        return Uni.combine().all().unis(emailNotification, whatsappNotification).discardItems();
                       })
               );
         })
@@ -305,12 +359,20 @@ public class VendorInvSubmissionService {
   }
 
   private Uni<Void> sendToReviewStaff(VendorInvSubmissionDTO invoice, String staffId) {
-    return staffClient.getStaff(staffId)
-        .onItem().ifNull().failWith(new IllegalStateException("Staff not found: " + staffId))
-        .onItem().transformToUni(staff -> {
+    return Uni.combine().all().unis(
+            staffClient.getStaff(staffId),
+            systemParameterClient.getNotificationConfig()
+        ).asTuple()
+        .onItem().transformToUni(tuple -> {
+          StaffDTO staff = tuple.getItem1();
+          var notificationConfig = tuple.getItem2();
+
+          if (staff == null) {
+            return Uni.createFrom().failure(new IllegalStateException("Staff not found: " + staffId));
+          }
           String email = staff.getEffectiveEmail();
           if (email == null || email.isBlank()) return Uni.createFrom().voidItem();
-          return generateReviewEmailTokens(invoice, staffId, staff.getName(), email);
+          return generateReviewEmailTokens(invoice, staffId, staff.getName(), email, staff.getTelMobile(), notificationConfig);
         })
         .onFailure().invoke(e -> log.error("Failed to send review notification for invoice {}: {}",
             invoice.getInvoiceNumber(), e.getMessage()))
@@ -318,20 +380,33 @@ public class VendorInvSubmissionService {
         .replaceWithVoid();
   }
 
-  private Uni<Void> generateReviewEmailTokens(VendorInvSubmissionDTO invoice, String staffId, String staffName, String email) {
-    Long invId = invoice.getUniqId();
-    String invNum = invoice.getInvoiceNumber();
-    return tokenService.generateToken(invId, invNum, "REVIEW", staffId)
+  private Uni<Void> generateReviewEmailTokens(
+      VendorInvSubmissionDTO invoice, String staffId, String staffName, String email,
+      String mobileNumber, NotificationConfigDTO notificationConfig) {
+    Long invoiceId = invoice.getUniqId();
+    String invoiceNumber = invoice.getInvoiceNumber();
+    boolean whatsappEnabled = notificationConfig != null && notificationConfig.isWhatsappEnabled()
+        && mobileNumber != null && !mobileNumber.isBlank();
+    return tokenService.generateToken(invoiceId, invoiceNumber, "REVIEW", staffId)
         .onItem().transformToUni(reviewToken ->
-            tokenService.generateToken(invId, invNum, "REJECT", staffId)
+            tokenService.generateToken(invoiceId, invoiceNumber, "REJECT", staffId)
                 .onItem().transformToUni(rejectToken -> {
                   String reviewUrl = actionBaseUrl + "/api/v1/invoices/action?token=" + reviewToken;
                   String rejectUrl = actionBaseUrl + "/api/v1/invoices/action?token=" + rejectToken;
                   String body = InvoiceEmailTemplate.buildReviewEmail(invoice, staffName, reviewUrl, rejectUrl);
-                  String subject = "Invoice Review Request — " + invNum;
-                  return emailService.sendReactive(email, subject, body);
+                  String subject = "Invoice Review Request — " + invoiceNumber;
+
+                  Uni<Void> emailNotification = emailService.sendReactive(email, subject, body).replaceWithVoid();
+
+                  Uni<Void> whatsappNotification = whatsappEnabled
+                      ? whatsappService.sendInvoiceReviewNotification(
+                          mobileNumber, staffName, invoice.getVendorName(), invoiceNumber,
+                          reviewToken, rejectToken).replaceWithVoid()
+                      : Uni.createFrom().voidItem();
+
+                  return Uni.combine().all().unis(emailNotification, whatsappNotification).discardItems();
                 })
-        ).onItem().ignore().andContinueWithNull();
+        );
   }
 
   /**

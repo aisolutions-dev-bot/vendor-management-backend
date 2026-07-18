@@ -241,6 +241,70 @@ public class InvoiceEmailTemplate {
         "</body></html>";
   }
 
+  /**
+   * Build vendor submission acknowledgment email, sent to the vendor immediately
+   * after they create an invoice — mirrors the vendor registration workflow's
+   * submission acknowledgment email.
+   */
+  public static String buildVendorAcknowledgmentEmail(VendorInvSubmissionDTO invoice, String vendorName) {
+    return "<!DOCTYPE html>" +
+        "<html lang='en'>" +
+        "<head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>" +
+        "<title>Invoice Received</title></head>" +
+        "<body style='margin:0;padding:0;background:" + COLOR_BG + ";font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",sans-serif;'>" +
+        "<table width='100%' cellpadding='0' cellspacing='0' style='background:" + COLOR_BG + ";padding:40px 16px;'>" +
+        "<tr><td align='center'>" +
+        "<table width='600' cellpadding='0' cellspacing='0' style='max-width:600px;width:100%;background:" + COLOR_CARD + ";border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.07);border:1px solid " + COLOR_BORDER + ";'>" +
+
+        // ── Header bar ──
+        "<tr><td style='background:" + COLOR_PRIMARY + ";padding:28px 40px;'>" +
+        "<p style='margin:0;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#c4b5fd;'>AI Solutions</p>" +
+        "<h1 style='margin:6px 0 0;color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.01em;'>Invoice Received</h1>" +
+        "</td></tr>" +
+
+        // ── Greeting ──
+        "<tr><td style='padding:32px 40px 0;'>" +
+        "<p style='margin:0;font-size:15px;color:" + COLOR_TEXT + ";'>Dear <strong>" + escHtml(vendorName) + "</strong>,</p>" +
+        "<p style='margin:10px 0 0;font-size:14px;color:" + COLOR_TEXT_MUTED + ";line-height:1.65;'>" +
+        "Thank you for submitting your invoice. We have received it and it is now pending review by our team." +
+        "</p>" +
+        "</td></tr>" +
+
+        // ── Invoice detail card ──
+        "<tr><td style='padding:24px 40px;'>" +
+        "<div style='background:#faf5ff;border:1px solid #ddd6fe;border-radius:12px;overflow:hidden;'>" +
+        "<div style='padding:14px 20px;border-bottom:1px solid #ddd6fe;'>" +
+        "<span style='font-size:11px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:" + COLOR_PRIMARY + ";'>Invoice Details</span>" +
+        "</div>" +
+        detailRow("Invoice Number", invoice.getInvoiceNumber(), true) +
+        detailRow("Invoice Date", formatDate(invoice.getInvoiceDate()), false) +
+        detailRow("PO Reference", invoice.getReferenceOur(), true) +
+        detailRow("Total Amount", formatAmount(invoice.getTotalForeign(), invoice.getCurrency()), false) +
+        "</div>" +
+        "</td></tr>" +
+
+        "<tr><td style='padding:0 40px 8px;'>" +
+        "<p style='margin:0;font-size:13px;color:" + COLOR_TEXT_MUTED + ";line-height:1.5;'>" +
+        "You will be notified by email once a decision has been made." +
+        "</p>" +
+        "</td></tr>" +
+
+        // ── Divider ──
+        "<tr><td style='padding:24px 40px 0;'><hr style='border:none;border-top:1px solid " + COLOR_BORDER + ";margin:0;'></td></tr>" +
+
+        // ── Footer ──
+        "<tr><td style='padding:24px 40px 32px;'>" +
+        "<p style='margin:0;font-size:12px;color:" + COLOR_TEXT_LIGHT + ";line-height:1.6;'>" +
+        "This is an automated notification from AI Solutions vendor management system.<br>" +
+        "Do not reply to this email. If you have questions, contact your system administrator." +
+        "</p>" +
+        "</td></tr>" +
+
+        "</table>" +
+        "</td></tr></table>" +
+        "</body></html>";
+  }
+
   // #region Helpers
 
   private static String detailRow(String label, String value, boolean shaded) {
