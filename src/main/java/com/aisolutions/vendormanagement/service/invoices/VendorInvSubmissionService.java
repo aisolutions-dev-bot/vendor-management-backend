@@ -29,6 +29,7 @@ import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import com.aisolutions.shared.util.DateUtil;
 import java.util.List;
 import java.util.Map;
 
@@ -161,7 +162,7 @@ public class VendorInvSubmissionService {
                           VendorInvSubmission invoice = new VendorInvSubmission();
                           invoice.setInvoiceNumber(invoiceNumber);
                           invoice.setInvoiceStatus("SUBMIT");
-                          invoice.setInvoiceDate(LocalDateTime.now());
+                          invoice.setInvoiceDate(DateUtil.nowSGT());
                           invoice.setVendorId(vendorId);
                           invoice.setVendorName(po.getSupplierName());
                           invoice.setCurrency(request.getCurrency() != null ? request.getCurrency() : po.getCurrency());
@@ -190,12 +191,12 @@ public class VendorInvSubmissionService {
 
                           // Calculate due date
                           if (po.getTermsDay() != null && po.getTermsDay() > 0) {
-                            invoice.setInvoiceDueDate(LocalDateTime.now().plusDays(po.getTermsDay().longValue()));
+                            invoice.setInvoiceDueDate(DateUtil.nowSGT().plusDays(po.getTermsDay().longValue()));
                           }
 
                           // Audit fields
                           invoice.setEntryStaff(vendorId);
-                          invoice.setEntryDate(LocalDateTime.now());
+                          invoice.setEntryDate(DateUtil.nowSGT());
 
                           return invoiceRepository.insertInvoice(invoice)
                               .onItem().transformToUni(savedInvoice -> {
@@ -223,7 +224,7 @@ public class VendorInvSubmissionService {
                                   det.setTaxForeign(BigDecimal.ZERO);
                                   det.setTotalForeign(poDetail.getSubTotalForeign());
                                   det.setEntryStaff(vendorId);
-                                  det.setEntryDate(LocalDateTime.now());
+                                  det.setEntryDate(DateUtil.nowSGT());
 
                                   final VendorInvSubmissionDetail finalDet = det;
                                   insertChain = insertChain.chain(() -> invoiceRepository.insertInvoiceDetail(finalDet)
@@ -478,7 +479,7 @@ public class VendorInvSubmissionService {
                   invoice.setVendorId(vendorId);
                   invoice.setInvoiceStatus("SUBMIT");
                   invoice.setEntryStaff(vendorId);
-                  invoice.setEntryDate(LocalDateTime.now());
+                  invoice.setEntryDate(DateUtil.nowSGT());
 
                   return invoiceRepository.insertInvoice(invoice)
                       .onItem().transformToUni(savedInvoice -> {
@@ -496,7 +497,7 @@ public class VendorInvSubmissionService {
                           det.setInvoiceNumber(invoiceNumber);
                           det.setDetailCode(String.format("%04d", seq++));
                           det.setEntryStaff(vendorId);
-                          det.setEntryDate(LocalDateTime.now());
+                          det.setEntryDate(DateUtil.nowSGT());
 
                           final VendorInvSubmissionDetail finalDet = det;
                           insertChain = insertChain.chain(() -> invoiceRepository.insertInvoiceDetail(finalDet)

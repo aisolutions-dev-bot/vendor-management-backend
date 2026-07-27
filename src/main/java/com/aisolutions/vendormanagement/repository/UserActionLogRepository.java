@@ -6,6 +6,7 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.time.LocalDateTime;
+import com.aisolutions.shared.util.DateUtil;
 
 import com.aisolutions.vendormanagement.entity.UserActionLog;
 
@@ -32,7 +33,7 @@ public class UserActionLogRepository implements PanacheRepositoryBase<UserAction
       log.setModule(module);
       log.setReferenceNo(referenceNo);
       log.setAction(action);
-      log.setLogDate(LocalDateTime.now());
+      log.setLogDate(DateUtil.nowSGT());
       log.setDeviceName(deviceName);
       log.setDeviceIPAddress(deviceIPAddress);
       log.setDeviceSerialNo(deviceSerialNo);

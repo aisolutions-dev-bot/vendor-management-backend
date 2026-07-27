@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import com.aisolutions.shared.util.DateUtil;
 
 @Slf4j
 @ApplicationScoped
@@ -31,7 +32,7 @@ public class InvoiceActionTokenService {
    */
   public Uni<String> generateToken(Long invoiceId, String invoiceNumber, String action, String approvalStaffId) {
     String tokenValue = generateSecureHex(64);
-    LocalDateTime now = LocalDateTime.now();
+    LocalDateTime now = DateUtil.nowSGT();
 
     VendorInvActionToken token = new VendorInvActionToken();
     token.setToken(tokenValue);
@@ -96,14 +97,14 @@ public class InvoiceActionTokenService {
             return Uni.createFrom().item(TokenValidationResult.of(TokenResult.ALREADY_USED));
           }
 
-          if (LocalDateTime.now().isAfter(token.getExpiresAt())) {
+          if (DateUtil.nowSGT().isAfter(token.getExpiresAt())) {
             log.warn("Token expired: invoiceId={} expiredAt={}", token.getInvoiceId(), token.getExpiresAt());
             return Uni.createFrom().item(TokenValidationResult.of(TokenResult.EXPIRED));
           }
 
           // Atomically mark used — if another request beat us, markUsed returns 0
           return Panache.withTransaction(() ->
-              tokenRepository.markUsed(tokenValue, LocalDateTime.now())
+              tokenRepository.markUsed(tokenValue, DateUtil.nowSGT())
                   .onItem().transformToUni(updated -> {
                     if (updated == 0) {
                       log.warn("Token race condition — already consumed: invoiceId={}", token.getInvoiceId());

@@ -11,6 +11,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.time.LocalDateTime;
+import com.aisolutions.shared.util.DateUtil;
 import java.util.List;
 import java.util.UUID;
 
@@ -122,7 +123,7 @@ public class AttachmentRepository implements PanacheRepositoryBase<Attachment, L
 
             // Audit fields
             entity.setEntryStaff(currentUser == null ? null : currentUser);
-            entity.setEntryDate(LocalDateTime.now());
+            entity.setEntryDate(DateUtil.nowSGT());
 
             return session.persist(entity).replaceWith(entity);
           });
